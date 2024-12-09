@@ -13,7 +13,7 @@ MyMD is a comprehensive healthcare web application designed to streamline commun
 
 We are using Jira to manage our project using the Scrum framework.
 
-![image](https://github.com/user-attachments/assets/795e82ae-4fc3-4ccc-96ee-6f8fe399c649)
+![image](https://github.com/user-attachments/assets/3ceaf18a-f80e-4375-ada7-0372d5e56232)
 
 Stories will be added regularly
 
