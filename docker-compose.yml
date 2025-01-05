@@ -1,0 +1,28 @@
+version: "3.12.6" 
+
+services:
+  backend: 
+    build: . 
+    ports:
+      - "5000:8080"  
+    environment:  
+      - FLASK_APP=db.py 
+      - FLASK_ENV=development  
+      - SQLALCHEMY_DATABASE_URI=mysql://sql7755566:2DrRzlViLm@sql7.freemysqlhosting.net:3306/sql7755566
+    depends_on: 
+      - db
+
+  db:  
+    image: mysql:latest 
+    environment:
+      - MYSQL_ROOT_PASSWORD=2DrRzlViLm  
+      - MYSQL_DATABASE=sql7755566  
+      - MYSQL_USER=sql7755566
+      - MYSQL_PASSWORD=2DrRzlViLm  
+    ports:
+      - "3306:3306" 
+    volumes:
+      - mysql_data:/var/lib/mysql
+
+volumes:
+  mysql_data: 

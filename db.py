@@ -1,10 +1,12 @@
 from flask import Flask, request, jsonify
 from flask_sqlalchemy import SQLAlchemy
-from werkzeug.security import generate_password_hash, check_password_hash
 from datetime import datetime
+from flask_cors import CORS
+
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://root@localhost:3306/mymd'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'mysql://sql7755566:2DrRzlViLm@sql7.freemysqlhosting.net:3306/sql7755566'
+CORS(app, resources={r"/api/*": {"origins": "*"}})
 
 db = SQLAlchemy(app)
 
@@ -28,6 +30,11 @@ class Doctors(db.Model):
     email = db.Column(db.String(255), nullable=False)
     bio = db.Column(db.String(255), nullable=False)
     image_url = db.Column(db.String(255), nullable=False)
+    password = db.Column(db.String(120), nullable=False)
+    
+class Admin(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
     password = db.Column(db.String(120), nullable=False)
 
 class DoctorSchedules(db.Model):
@@ -66,6 +73,28 @@ class MedicalRecordAccess(db.Model):
 
     record = db.relationship('MedicalRecords', backref='access_list')
     doctor = db.relationship('Doctors', backref='accessible_records')
+    
+class Pharmacy(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(255), nullable=False)
+    address = db.Column(db.String(255), nullable=False)
+    phone_number = db.Column(db.String(20), nullable=False)
+    
+class MentalHealthArticle(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    image_url = db.Column(db.String(255))
+    title = db.Column(db.String(255), nullable=False)
+    content = db.Column(db.Text, nullable=False)
+    
+class Diagnoses(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    record_id = db.Column(db.Integer, db.ForeignKey('medical_records.id'), nullable=False)
+    doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
+    diagnosis = db.Column(db.Text, nullable=False)
+    created_at = db.Column(db.DateTime, default=db.func.now())
+
+    record = db.relationship('MedicalRecords', backref='diagnoses')
+    doctor = db.relationship('Doctors', backref='diagnoses_given')
 
 @app.route('/api/register', methods=['POST'])
 def register():
@@ -107,6 +136,10 @@ def login():
     doctor = Doctors.query.filter_by(email=username).first() 
     if doctor and doctor.password == password:
         return jsonify({'message': 'Login successful', 'user_id': doctor.id, 'role': 'doctor'}), 200
+    
+    admin = Admin.query.filter_by(username=username).first()
+    if admin and admin.password == password:
+        return jsonify({'message': 'Login successful', 'user_id': admin.id, 'role': 'admin'}), 200
 
     return jsonify({'message': 'Invalid username or password'}), 401
 
@@ -237,6 +270,18 @@ def get_appointments():
 
     return jsonify(appointment_list)
 
+@app.route('/api/appointments/<int:appointment_id>', methods=['DELETE'])
+def cancel_appointment(appointment_id):
+    appointment = Appointments.query.get(appointment_id)
+    if not appointment:
+        return jsonify({'message': 'Appointment not found'}), 404
+
+    db.session.delete(appointment)
+    db.session.commit()
+
+    return jsonify({'message': 'Appointment cancelled successfully'}), 200
+
+
 @app.route('/api/medical_records', methods=['POST'])
 def add_medical_record():
     data = request.get_json()
@@ -282,7 +327,20 @@ def get_medical_records():
 
     record_list = []
     for record in records:
+        diagnoses_list = []
         doctor_list = []
+        
+        for diagnosis in record.diagnoses:
+            diagnoses_list.append({
+                'id': diagnosis.id,
+                'diagnosis': diagnosis.diagnosis,
+                'doctor': {
+                    'id': diagnosis.doctor.id,
+                    'name': diagnosis.doctor.name
+                },
+                'created_at': diagnosis.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+            
         for access in record.access_list:
             doctor_list.append({
                 'id': access.doctor.id,
@@ -294,7 +352,8 @@ def get_medical_records():
             'image_url': record.image_url,
             'description': record.description,
             'created_at': record.created_at.strftime('%Y-%m-%d %H:%M:%S'),
-            'doctors': doctor_list 
+            'doctors': doctor_list,
+            'diagnoses': diagnoses_list
         })
 
     return jsonify(record_list)
@@ -380,6 +439,157 @@ def update_doctor_schedule():
     db.session.commit()
 
     return jsonify({'message': 'Schedule updated successfully'}), 200
+
+@app.route('/api/pharmacies', methods=['POST'])
+def add_pharmacy():
+    data = request.get_json()
+    name = data.get('name')
+    address = data.get('address')
+    phone_number = data.get('phone_number')
+
+    if not name or not address or not phone_number:
+        return jsonify({'message': 'Missing required fields'}), 400
+
+    pharmacy = Pharmacy(name=name, address=address, phone_number=phone_number)
+    db.session.add(pharmacy)
+    db.session.commit()
+
+    return jsonify({'message': 'Pharmacy added successfully', 'pharmacy_id': pharmacy.id}), 201
+
+@app.route('/api/pharmacies', methods=['GET'])
+def get_pharmacies():
+    pharmacies = Pharmacy.query.all()
+
+    pharmacy_list = []
+    for pharmacy in pharmacies:
+        pharmacy_list.append({
+            'id': pharmacy.id,
+            'name': pharmacy.name,
+            'address': pharmacy.address,
+            'phone_number': pharmacy.phone_number
+        })
+
+    return jsonify(pharmacy_list)
+
+@app.route('/api/pharmacies/<int:pharmacy_id>', methods=['PUT'])
+def edit_pharmacy(pharmacy_id):
+    pharmacy = Pharmacy.query.get(pharmacy_id)
+    if not pharmacy:
+        return jsonify({'message': 'Pharmacy not found'}), 404
+
+    data = request.get_json()
+    name = data.get('name')
+    address = data.get('address')
+    phone_number = data.get('phone_number')
+
+    if name:
+        pharmacy.name = name
+    if address:
+        pharmacy.address = address
+    if phone_number:
+        pharmacy.phone_number = phone_number
+
+    db.session.commit()
+
+    return jsonify({'message': 'Pharmacy updated successfully'}), 200
+
+@app.route('/api/pharmacies/<int:pharmacy_id>', methods=['GET'])
+def get_pharmacy(pharmacy_id):
+    pharmacy = Pharmacy.query.get(pharmacy_id)
+    if not pharmacy:
+        return jsonify({'message': 'Pharmacy not found'}), 404
+
+    pharmacy_data = {
+        'id': pharmacy.id,
+        'name': pharmacy.name,
+        'address': pharmacy.address,
+        'phone_number': pharmacy.phone_number
+    }
+    return jsonify(pharmacy_data)
+
+
+@app.route('/api/mental_health_articles', methods=['POST'])
+def add_mental_health_article():
+    data = request.get_json()
+    image_url = data.get('image_url')
+    title = data.get('title')
+    content = data.get('content')
+
+    if not title or not content:
+        return jsonify({'message': 'Missing required fields'}), 400
+
+    article = MentalHealthArticle(image_url=image_url, title=title, content=content)
+    db.session.add(article)
+    db.session.commit()
+
+    return jsonify({'message': 'Mental health article added successfully', 'article_id': article.id}), 201
+
+@app.route('/api/mental_health_articles', methods=['GET'])
+def get_mental_health_articles():
+    articles = MentalHealthArticle.query.all()
+
+    article_list = []
+    for article in articles:
+        article_list.append({
+            'id': article.id,
+            'image_url': article.image_url,
+            'title': article.title,
+            'content': article.content
+        })
+
+    return jsonify(article_list)
+
+@app.route('/api/mental_health_articles/<int:article_id>', methods=['GET'])
+def get_mental_health_article(article_id):
+    article = MentalHealthArticle.query.get(article_id)
+    if not article:
+        return jsonify({'message': 'Article not found'}), 404
+
+    article_data = {
+        'id': article.id,
+        'image_url': article.image_url,
+        'title': article.title,
+        'content': article.content
+    }
+    return jsonify(article_data)
+
+@app.route('/api/mental_health_articles/<int:article_id>', methods=['PUT'])
+def edit_mental_health_article(article_id):
+    article = MentalHealthArticle.query.get(article_id)
+    if not article:
+        return jsonify({'message': 'Article not found'}), 404
+
+    data = request.get_json()
+    image_url = data.get('image_url')
+    title = data.get('title')
+    content = data.get('content')
+
+    if image_url:
+        article.image_url = image_url
+    if title:
+        article.title = title
+    if content:
+        article.content = content
+
+    db.session.commit()
+
+    return jsonify({'message': 'Mental health article updated successfully'}), 200
+
+@app.route('/api/diagnoses', methods=['POST'])
+def add_diagnosis():
+    data = request.get_json()
+    record_id = data.get('record_id')
+    doctor_id = data.get('doctor_id')
+    diagnosis_text = data.get('diagnosis')
+
+    if not record_id or not doctor_id or not diagnosis_text:
+        return jsonify({'message': 'Missing required fields'}), 400
+
+    diagnosis = Diagnoses(record_id=record_id, doctor_id=doctor_id, diagnosis=diagnosis_text)
+    db.session.add(diagnosis)
+    db.session.commit()
+
+    return jsonify({'message': 'Diagnosis added successfully', 'diagnosis_id': diagnosis.id}), 201
 
 
 if __name__ == '__main__':
